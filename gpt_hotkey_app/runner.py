@@ -7,7 +7,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Optional
 
 from .clipboard_io import snapshot_clipboard, write_clipboard_text
-from .client_openai import OpenAIChatClient
+from .config import AppConfig
+from .openai_client import ask_gpt
 from .selection import get_selected_text
 
 
@@ -16,12 +17,12 @@ class Runner:
 
     def __init__(
         self,
-        client: OpenAIChatClient,
+        config: AppConfig,
         tray,
         stop_event: threading.Event,
         logger: logging.Logger,
     ) -> None:
-        self._client = client
+        self._config = config
         self._tray = tray
         self._stop_event = stop_event
         self._logger = logger
@@ -76,7 +77,12 @@ class Runner:
                 return
 
             try:
-                response = self._client.chat(selected_text)
+                response = ask_gpt(
+                    system=self._config.system_prompt,
+                    user=selected_text,
+                    model=self._config.openai_model,
+                    timeout=self._config.request_timeout,
+                )
             except Exception as exc:  # noqa: BLE001
                 self._logger.exception("Error while calling OpenAI API")
                 self._tray.notify(f"OpenAI error: {exc}")
