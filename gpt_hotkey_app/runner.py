@@ -18,6 +18,7 @@ from .openai_client import ask_gpt
 from .preview import show_annotation_preview
 from .region_select import select_screen_region
 from .selection import get_selected_text
+from .text_detection import detect_text_boxes
 
 
 class Runner:
@@ -99,31 +100,33 @@ class Runner:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _run_region_object_discovery_once(self) -> None:
-        self._logger.info("F10 pressed — region selection for object discovery")
-        self._tray.notify("Select area for object discovery...")
-        bbox = select_screen_region()
-
-        if not bbox:
-            self._logger.info("Region selection canceled or timed out")
-            self._tray.notify("Selection canceled")
-            return
-
-        self._logger.info("Selected region for object discovery: %s", bbox)
-        self._tray.notify("Detecting objects in selected region...")
-
+        """
+        F10: select region -> detect objects (YOLO) + text (OCR) ->
+        show annotated preview window.
+        """
         try:
-            img = capture_region_image(bbox)
-            detections = detect_objects_pil(img)
-            if not detections:
-                self._logger.warning("No objects found in selection")
-                self._tray.notify("No objects found")
+            self._logger.info("F10 pressed — region selection for object+text discovery")
+            bbox = select_screen_region()
+            if not bbox:
+                self._tray.notify("Selection canceled")
                 return
 
-            self._logger.info("Detected %d objects", len(detections))
-            self._tray.notify(f"{len(detections)} objects detected")
-            show_annotation_preview(img, detections)
+            img = capture_region_image(bbox)
+            self._tray.notify("Detecting objects + text...")
+
+            objects = detect_objects_pil(img, conf=0.3, iou=0.45)
+            texts   = detect_text_boxes(img, min_conf=60)
+            self._logger.info("Detections — objects: %d, text boxes: %d", len(objects), len(texts))
+
+            if not objects and not texts:
+                self._tray.notify("No objects or readable text found")
+                return
+
+            show_annotation_preview(img, objects, texts)
+            self._tray.notify(f"Objects: {len(objects)} | Text: {len(texts)}")
+
         except Exception as e:
-            self._logger.exception("Error during object discovery pipeline")
+            self._logger.exception("F10 discovery error: %s", e)
             self._tray.notify(f"F10 error: {e}")
         finally:
             with self._future_lock:

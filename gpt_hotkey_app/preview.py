@@ -1,53 +1,91 @@
-"""A simple Tkinter viewer for displaying object detection results."""
 from __future__ import annotations
-
 import tkinter as tk
-from typing import TYPE_CHECKING, List, Tuple
+from tkinter import ttk
+from typing import List, Tuple
+from PIL import Image, ImageDraw, ImageTk, ImageOps
 
-from PIL import ImageDraw, ImageTk
+Det = Tuple[int, int, int, int, float, str]
 
-if TYPE_CHECKING:
-    from PIL.Image import Image
-
+_img_refs = []  # Global list to hold PhotoImage references
 
 def show_annotation_preview(
-    img: Image, detections: List[Tuple[int, int, int, int, float, str]]
+    base_image: Image.Image,
+    object_dets: List[Det],
+    text_dets: List[Det] | None = None,
+    max_w: int = 1200,
+    thumb_size: int = 160,
 ) -> None:
-    """Show a preview window with the annotated image and thumbnails.
-
-    Args:
-        img: The original PIL Image.
-        detections: A list of detected objects.
     """
+    Displays a topmost Tkinter window with:
+      - left: annotated region (green=objects, blue=text)
+      - right: scrollable thumbnails for each detected object and text box
+    """
+    global _img_refs
+    _img_refs.clear()
+    text_dets = text_dets or []
+
     root = tk.Tk()
-    root.title("Object Detection Preview")
+    root.title(f"Detection Preview ({len(object_dets)} objects, {len(text_dets)} text boxes)")
     root.attributes("-topmost", True)
 
-    # Main frame
-    main_frame = tk.Frame(root)
+    main_frame = ttk.Frame(root)
     main_frame.pack(fill=tk.BOTH, expand=True)
 
-    # Annotated image on the left
-    annotated_img = img.copy()
+    # --- Annotated Image ---
+    annotated_img = base_image.copy()
     draw = ImageDraw.Draw(annotated_img)
-    for x1, y1, x2, y2, _, _ in detections:
-        draw.rectangle([x1, y1, x2, y2], outline="lime", width=2)
-    photo = ImageTk.PhotoImage(annotated_img)
-    image_label = tk.Label(main_frame, image=photo)
-    image_label.pack(side=tk.LEFT, padx=10, pady=10)
+    for det in object_dets:
+        draw.rectangle(det[:4], outline="lime", width=2)
+    for det in text_dets:
+        draw.rectangle(det[:4], outline="dodgerblue", width=2)
 
-    # Thumbnails on the right
-    thumb_frame = tk.Frame(main_frame)
-    thumb_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
+    # Rescale if too large
+    if annotated_img.width > max_w:
+        ratio = max_w / annotated_img.width
+        annotated_img = annotated_img.resize((max_w, int(annotated_img.height * ratio)))
 
-    for x1, y1, x2, y2, score, class_name in detections:
-        cropped_img = img.crop((x1, y1, x2, y2)).resize((100, 100))
-        thumb_photo = ImageTk.PhotoImage(cropped_img)
-        thumb_label = tk.Label(thumb_frame, image=thumb_photo)
-        thumb_label.image = thumb_photo  # Keep a reference
-        thumb_label.pack()
+    img_tk = ImageTk.PhotoImage(annotated_img)
+    _img_refs.append(img_tk)
+    img_label = ttk.Label(main_frame, image=img_tk)
+    img_label.pack(side=tk.LEFT, padx=10, pady=10)
 
-        info_label = tk.Label(thumb_frame, text=f"{class_name} ({score:.2f})")
+    # --- Thumbnails ---
+    canvas = tk.Canvas(main_frame, width=thumb_size + 40)
+    scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = ttk.Frame(canvas)
+
+    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side=tk.LEFT, fill="y", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Object thumbnails
+    for x1, y1, x2, y2, score, name in object_dets:
+        crop = base_image.crop((x1, y1, x2, y2))
+        crop_thumb = ImageOps.pad(crop, (thumb_size, thumb_size))
+        thumb_tk = ImageTk.PhotoImage(crop_thumb)
+        _img_refs.append(thumb_tk)
+
+        thumb_label = ttk.Label(scrollable_frame, image=thumb_tk)
+        thumb_label.pack(pady=5)
+        info = f"{name} ({score:.2f})"
+        info_label = ttk.Label(scrollable_frame, text=info, foreground="green")
+        info_label.pack()
+
+    # Text thumbnails
+    for x1, y1, x2, y2, score, txt in text_dets:
+        crop = base_image.crop((x1, y1, x2, y2))
+        crop_thumb = ImageOps.pad(crop, (thumb_size, thumb_size))
+        thumb_tk = ImageTk.PhotoImage(crop_thumb)
+        _img_refs.append(thumb_tk)
+
+        thumb_label = ttk.Label(scrollable_frame, image=thumb_tk)
+        thumb_label.pack(pady=5)
+        display_txt = (txt[:40] + "…") if len(txt) > 40 else txt
+        info = f'"{display_txt}" ({score:.2f})'
+        info_label = ttk.Label(scrollable_frame, text=info, foreground="blue")
         info_label.pack()
 
     root.mainloop()
