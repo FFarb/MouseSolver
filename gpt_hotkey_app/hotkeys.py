@@ -13,23 +13,26 @@ class HotkeyManager:
     def __init__(
         self,
         on_trigger: Callable[[], None],
-        on_ocr: Callable[[], None],
+        on_ocr_region: Callable[[], None],
+        on_ocr_window: Callable[[], None],
         on_exit: Callable[[], None],
         logger: logging.Logger,
     ) -> None:
         self._on_trigger = on_trigger
-        self._on_ocr = on_ocr
+        self._on_ocr_region = on_ocr_region
+        self._on_ocr_window = on_ocr_window
         self._on_exit = on_exit
         self._logger = logger
         self._hotkey_refs: List[int] = []
 
     def register(self) -> None:
-        """Register F8, F9, and F12 hotkeys."""
-        self._logger.info("Registering hotkeys F8, F9, and F12")
+        """Register F8, F9, Ctrl+F9, and F12 hotkeys."""
+        self._logger.info("Registering hotkeys F8, F9, Ctrl+F9, and F12")
         trigger_ref = keyboard.add_hotkey("F8", self._handle_trigger)
-        ocr_ref = keyboard.add_hotkey("F9", self._handle_ocr)
+        ocr_region_ref = keyboard.add_hotkey("F9", self._handle_ocr_region)
+        ocr_window_ref = keyboard.add_hotkey("Ctrl+F9", self._handle_ocr_window)
         exit_ref = keyboard.add_hotkey("F12", self._handle_exit)
-        self._hotkey_refs = [trigger_ref, ocr_ref, exit_ref]
+        self._hotkey_refs = [trigger_ref, ocr_region_ref, ocr_window_ref, exit_ref]
 
     def unregister(self) -> None:
         """Unregister previously registered hotkeys."""
@@ -42,9 +45,13 @@ class HotkeyManager:
         self._logger.debug("F8 pressed")
         self._on_trigger()
 
-    def _handle_ocr(self) -> None:
+    def _handle_ocr_region(self) -> None:
         self._logger.debug("F9 pressed")
-        self._on_ocr()
+        self._on_ocr_region()
+
+    def _handle_ocr_window(self) -> None:
+        self._logger.debug("Ctrl+F9 pressed")
+        self._on_ocr_window()
 
     def _handle_exit(self) -> None:
         self._logger.debug("F12 pressed")

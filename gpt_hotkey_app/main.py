@@ -1,6 +1,7 @@
 """Entry point for the GPT hotkey Windows application."""
 from __future__ import annotations
 
+import ctypes
 import logging
 import threading
 import time
@@ -37,6 +38,10 @@ def _exit_application(
 
 def main() -> None:
     """Application entry point."""
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except (AttributeError, TypeError):
+        pass  # Ignore for non-Windows systems
     config = load_config()
     log_dir = Path.cwd()
     logger = setup_logging(config.log_level, log_dir)
@@ -72,12 +77,16 @@ def main() -> None:
         _exit_application(stop_event, hotkeys, runner, tray_manager, logger)
 
     hotkeys = HotkeyManager(
-        on_trigger=runner.trigger, on_ocr=runner.run_ocr_pipeline, on_exit=on_exit, logger=logger
+        on_trigger=runner.trigger,
+        on_ocr_region=runner.run_ocr_region_select,
+        on_ocr_window=runner.run_ocr_pipeline,
+        on_exit=on_exit,
+        logger=logger,
     )
     hotkeys.register()
     tray_manager.set_exit_callback(on_exit)
 
-    tray_manager.notify("GPT Hotkey running (F8 to query, F9 for OCR, F12 to exit)")
+    tray_manager.notify("GPT Hotkey running (F8, F9 for region OCR, Ctrl+F9 for window OCR, F12 to exit)")
 
     try:
         while not stop_event.is_set():

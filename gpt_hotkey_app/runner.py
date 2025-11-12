@@ -8,8 +8,9 @@ from typing import Optional
 
 from .clipboard_io import snapshot_clipboard, write_clipboard_text
 from .config import AppConfig
-from .ocr import extract_text_from_active_window
+from .ocr import extract_text_from_active_window, extract_text_from_region
 from .openai_client import ask_gpt
+from .region_select import select_screen_region
 from .selection import get_selected_text
 
 
@@ -44,6 +45,19 @@ class Runner:
                 return
             self._current_future = self._executor.submit(self._run_once)
 
+    def run_ocr_region_select(self) -> None:
+        """Trigger the screen region OCR workflow in a background worker."""
+        if self._stop_event.is_set():
+            self._logger.debug("Trigger ignored because stop event is set")
+            return
+
+        with self._future_lock:
+            if self._current_future and not self._current_future.done():
+                self._logger.info("Processing already in progress; ignoring new trigger")
+                self._tray.notify("Processing already in progress")
+                return
+            self._current_future = self._executor.submit(self._run_ocr_region_once)
+
     def run_ocr_pipeline(self) -> None:
         """Trigger the OCR workflow in a background worker thread."""
         if self._stop_event.is_set():
@@ -64,6 +78,43 @@ class Runner:
             if self._current_future:
                 self._current_future.cancel()
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _run_ocr_region_once(self) -> None:
+        self._logger.info("F9 pressed — starting screen region OCR")
+        self._tray.notify("Select area (ESC to cancel)...")
+        bbox = select_screen_region()
+
+        if not bbox:
+            self._logger.info("Region selection canceled or timed out")
+            self._tray.notify("Region selection canceled")
+            return
+
+        self._logger.info("Selected region: %s", bbox)
+        self._tray.notify("Analyzing selected region...")
+
+        try:
+            text = extract_text_from_region(bbox)
+            if not text.strip():
+                self._logger.warning("No readable text found in selection")
+                self._tray.notify("No readable text in selection")
+                return
+
+            self._logger.info("OCR extracted %d characters from region", len(text))
+            reply = ask_gpt(
+                system=self._config.system_prompt,
+                user=text,
+                model=self._config.openai_model,
+                timeout=self._config.request_timeout,
+            )
+            write_clipboard_text(reply)
+            self._logger.info("OCR region response written to clipboard (%d chars)", len(reply))
+            self._tray.notify(f"OCR → GPT: response copied ({len(reply)} chars)")
+        except Exception as e:
+            self._logger.exception("Error during screen region OCR pipeline")
+            self._tray.notify(f"OCR region error: {e}")
+        finally:
+            with self._future_lock:
+                self._current_future = None
 
     def _run_ocr_once(self) -> None:
         self._logger.info("F9 pressed — capturing active window for OCR")
