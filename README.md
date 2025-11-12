@@ -6,6 +6,7 @@ A Windows desktop helper that sends highlighted text to the OpenAI Responses API
 
 - Global hotkeys powered by the [`keyboard`](https://github.com/boppreh/keyboard) library:
   - **F8** – capture the current selection, send it to OpenAI, and copy the reply back to the clipboard.
+  - **F9** – capture the active window, perform OCR, send the extracted text to OpenAI, and copy the reply back to the clipboard.
   - **F12** – terminate the application immediately.
 - System tray icon with status notifications via `pystray`.
 - Clipboard preservation using `pyperclip`.

@@ -13,20 +13,23 @@ class HotkeyManager:
     def __init__(
         self,
         on_trigger: Callable[[], None],
+        on_ocr: Callable[[], None],
         on_exit: Callable[[], None],
         logger: logging.Logger,
     ) -> None:
         self._on_trigger = on_trigger
+        self._on_ocr = on_ocr
         self._on_exit = on_exit
         self._logger = logger
         self._hotkey_refs: List[int] = []
 
     def register(self) -> None:
-        """Register F8 and F12 hotkeys."""
-        self._logger.info("Registering hotkeys F8 and F12")
+        """Register F8, F9, and F12 hotkeys."""
+        self._logger.info("Registering hotkeys F8, F9, and F12")
         trigger_ref = keyboard.add_hotkey("F8", self._handle_trigger)
+        ocr_ref = keyboard.add_hotkey("F9", self._handle_ocr)
         exit_ref = keyboard.add_hotkey("F12", self._handle_exit)
-        self._hotkey_refs = [trigger_ref, exit_ref]
+        self._hotkey_refs = [trigger_ref, ocr_ref, exit_ref]
 
     def unregister(self) -> None:
         """Unregister previously registered hotkeys."""
@@ -38,6 +41,10 @@ class HotkeyManager:
     def _handle_trigger(self) -> None:
         self._logger.debug("F8 pressed")
         self._on_trigger()
+
+    def _handle_ocr(self) -> None:
+        self._logger.debug("F9 pressed")
+        self._on_ocr()
 
     def _handle_exit(self) -> None:
         self._logger.debug("F12 pressed")

@@ -42,7 +42,7 @@ def ask_gpt(system: str, user: str, *, model: str | None = None, timeout: int | 
     try:
         resp = client.responses.create(
             model=model_to_use,
-            reasoning={"effort": "medium"},
+            reasoning={"effort": "low"},
             input=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},

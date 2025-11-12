@@ -8,6 +8,7 @@ from typing import Optional
 
 from .clipboard_io import snapshot_clipboard, write_clipboard_text
 from .config import AppConfig
+from .ocr import extract_text_from_active_window
 from .openai_client import ask_gpt
 from .selection import get_selected_text
 
@@ -43,6 +44,19 @@ class Runner:
                 return
             self._current_future = self._executor.submit(self._run_once)
 
+    def run_ocr_pipeline(self) -> None:
+        """Trigger the OCR workflow in a background worker thread."""
+        if self._stop_event.is_set():
+            self._logger.debug("Trigger ignored because stop event is set")
+            return
+
+        with self._future_lock:
+            if self._current_future and not self._current_future.done():
+                self._logger.info("Processing already in progress; ignoring new trigger")
+                self._tray.notify("Processing already in progress")
+                return
+            self._current_future = self._executor.submit(self._run_ocr_once)
+
     def shutdown(self) -> None:
         """Shutdown the executor and wait for active jobs to finish."""
         self._logger.debug("Shutting down runner executor")
@@ -50,6 +64,33 @@ class Runner:
             if self._current_future:
                 self._current_future.cancel()
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _run_ocr_once(self) -> None:
+        self._logger.info("F9 pressed — capturing active window for OCR")
+        self._tray.notify("GPT OCR mode active — analyzing screen text...")
+        try:
+            text = extract_text_from_active_window()
+            if not text.strip():
+                self._logger.warning("No readable text found on screen")
+                self._tray.notify("No readable text found on screen")
+                return
+
+            self._logger.info("OCR extracted %d characters", len(text))
+            reply = ask_gpt(
+                system=self._config.system_prompt,
+                user=text,
+                model=self._config.openai_model,
+                timeout=self._config.request_timeout,
+            )
+            write_clipboard_text(reply)
+            self._logger.info("OCR response written to clipboard (%d chars)", len(reply))
+            self._tray.notify(f"OCR analyzed — response copied ({len(reply)} chars)")
+        except Exception as e:
+            self._logger.exception("Error during OCR pipeline")
+            self._tray.notify(f"OCR error: {e}")
+        finally:
+            with self._future_lock:
+                self._current_future = None
 
     def _run_once(self) -> None:
         self._logger.info("Hotkey trigger received; starting workflow")
