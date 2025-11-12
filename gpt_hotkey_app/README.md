@@ -25,14 +25,20 @@ LOG_LEVEL=INFO
 
 The application exits immediately if `OPENAI_API_KEY` is missing.
 
-## Running Locally
+## Installation & Running Locally
+
+All commands below assume you are at the project root (the folder that contains the `gpt_hotkey_app/` package and `pyproject.toml`).
 
 ```bash
 python -m venv .venv
 . .venv/Scripts/activate  # On Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -e .          # installs the package and its dependencies
 python -m gpt_hotkey_app.main
+# or simply use the console script entry point after installation
+# gpt-hotkey-app
 ```
+
+If you prefer not to install the package in editable mode, you can also run `pip install .` instead.
 
 ## Building a Standalone Executable
 
