@@ -80,13 +80,16 @@ def main() -> None:
         on_trigger=runner.trigger,
         on_ocr_region=runner.run_ocr_region_select,
         on_ocr_window=runner.run_ocr_pipeline,
+        on_object_discovery=runner.run_region_object_discovery,
         on_exit=on_exit,
         logger=logger,
     )
     hotkeys.register()
     tray_manager.set_exit_callback(on_exit)
 
-    tray_manager.notify("GPT Hotkey running (F8, F9 for region OCR, Ctrl+F9 for window OCR, F12 to exit)")
+    tray_manager.notify(
+        "GPT Hotkey running (F8, F9 for region OCR, F10 for object discovery, F12 to exit)"
+    )
 
     try:
         while not stop_event.is_set():

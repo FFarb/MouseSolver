@@ -8,8 +8,14 @@ from typing import Optional
 
 from .clipboard_io import snapshot_clipboard, write_clipboard_text
 from .config import AppConfig
-from .ocr import extract_text_from_active_window, extract_text_from_region
+from .object_detection import detect_objects_pil
+from .ocr import (
+    capture_region_image,
+    extract_text_from_active_window,
+    extract_text_from_region,
+)
 from .openai_client import ask_gpt
+from .preview import show_annotation_preview
 from .region_select import select_screen_region
 from .selection import get_selected_text
 
@@ -58,6 +64,19 @@ class Runner:
                 return
             self._current_future = self._executor.submit(self._run_ocr_region_once)
 
+    def run_region_object_discovery(self) -> None:
+        """Trigger the region object discovery workflow in a background worker."""
+        if self._stop_event.is_set():
+            self._logger.debug("Trigger ignored because stop event is set")
+            return
+
+        with self._future_lock:
+            if self._current_future and not self._current_future.done():
+                self._logger.info("Processing already in progress; ignoring new trigger")
+                self._tray.notify("Processing already in progress")
+                return
+            self._current_future = self._executor.submit(self._run_region_object_discovery_once)
+
     def run_ocr_pipeline(self) -> None:
         """Trigger the OCR workflow in a background worker thread."""
         if self._stop_event.is_set():
@@ -78,6 +97,37 @@ class Runner:
             if self._current_future:
                 self._current_future.cancel()
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _run_region_object_discovery_once(self) -> None:
+        self._logger.info("F10 pressed — region selection for object discovery")
+        self._tray.notify("Select area for object discovery...")
+        bbox = select_screen_region()
+
+        if not bbox:
+            self._logger.info("Region selection canceled or timed out")
+            self._tray.notify("Selection canceled")
+            return
+
+        self._logger.info("Selected region for object discovery: %s", bbox)
+        self._tray.notify("Detecting objects in selected region...")
+
+        try:
+            img = capture_region_image(bbox)
+            detections = detect_objects_pil(img)
+            if not detections:
+                self._logger.warning("No objects found in selection")
+                self._tray.notify("No objects found")
+                return
+
+            self._logger.info("Detected %d objects", len(detections))
+            self._tray.notify(f"{len(detections)} objects detected")
+            show_annotation_preview(img, detections)
+        except Exception as e:
+            self._logger.exception("Error during object discovery pipeline")
+            self._tray.notify(f"F10 error: {e}")
+        finally:
+            with self._future_lock:
+                self._current_future = None
 
     def _run_ocr_region_once(self) -> None:
         self._logger.info("F9 pressed — starting screen region OCR")

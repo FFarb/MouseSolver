@@ -6,3 +6,5 @@ pystray>=0.19
 Pillow>=10.0
 pywin32>=306
 pytesseract>=0.3.10
+ultralytics>=8.3
+opencv-python>=4.10
