@@ -1,40 +1,21 @@
 """Entry point for the GPT hotkey Windows application."""
 from __future__ import annotations
 
+import ctypes
 import logging
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import keyboard
-import psutil
 
-from .client_openai import OpenAIChatClient
 from .config import load_config
 from .hotkeys import HotkeyManager
 from .logger import setup_logging
 from .runner import Runner
+from .single_instance import ensure_single_instance
 from .tray import TrayManager
-
-APP_IDENTIFIER = "GPT-Hotkey"
-
-
-def ensure_single_instance(identifiers: List[str], logger: logging.Logger) -> bool:
-    """Ensure only one instance of the application is running."""
-    try:
-        current = psutil.Process()
-        for proc in psutil.process_iter(["pid", "cmdline"]):
-            if proc.pid == current.pid:
-                continue
-            cmdline = proc.info.get("cmdline") or []
-            merged = " ".join(cmdline)
-            if any(identifier and identifier in merged for identifier in identifiers):
-                logger.error("Another instance of the application is already running")
-                return False
-    except psutil.Error as exc:
-        logger.warning("Unable to verify single instance: %s", exc)
-    return True
 
 
 def _exit_application(
@@ -57,15 +38,16 @@ def _exit_application(
 
 def main() -> None:
     """Application entry point."""
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except (AttributeError, TypeError):
+        pass  # Ignore for non-Windows systems
     config = load_config()
     log_dir = Path.cwd()
     logger = setup_logging(config.log_level, log_dir)
     logger.info("Application starting")
 
-    identifier_candidates = [APP_IDENTIFIER, Path(__file__).stem]
-    if not ensure_single_instance(identifier_candidates, logger):
-        logger.error("Application already running; exiting")
-        return
+    ensure_single_instance(logger=logger)
 
     stop_event = threading.Event()
 
@@ -80,8 +62,7 @@ def main() -> None:
         tray_manager.stop()
         return
 
-    client = OpenAIChatClient(config, logger)
-    runner = Runner(client, tray_manager, stop_event, logger)
+    runner = Runner(config, tray_manager, stop_event, logger)
     hotkeys: Optional[HotkeyManager] = None
 
     def on_exit() -> None:
@@ -95,11 +76,20 @@ def main() -> None:
             return
         _exit_application(stop_event, hotkeys, runner, tray_manager, logger)
 
-    hotkeys = HotkeyManager(on_trigger=runner.trigger, on_exit=on_exit, logger=logger)
+    hotkeys = HotkeyManager(
+        on_trigger=runner.trigger,
+        on_ocr_region=runner.run_ocr_region_select,
+        on_ocr_window=runner.run_ocr_pipeline,
+        on_object_discovery=runner.run_region_object_discovery,
+        on_exit=on_exit,
+        logger=logger,
+    )
     hotkeys.register()
     tray_manager.set_exit_callback(on_exit)
 
-    tray_manager.notify("GPT Hotkey running (F8 to query, F12 to exit)")
+    tray_manager.notify(
+        "GPT Hotkey running (F8, F9 for region OCR, F10 for object discovery, F12 to exit)"
+    )
 
     try:
         while not stop_event.is_set():
