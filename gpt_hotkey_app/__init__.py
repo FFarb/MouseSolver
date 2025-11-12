@@ -1,0 +1,1 @@
+"""GPT Hotkey application package."""
