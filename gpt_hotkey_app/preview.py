@@ -46,7 +46,7 @@ def show_annotation_preview(
 
     img_tk = ImageTk.PhotoImage(annotated_img)
     _img_refs.append(img_tk)
-    img_label = ttk.Label(main_frame, image=img_tk)
+    img_label = tk.Label(main_frame, image=img_tk)
     img_label.pack(side=tk.LEFT, padx=10, pady=10)
 
     # --- Thumbnails ---
@@ -68,7 +68,7 @@ def show_annotation_preview(
         thumb_tk = ImageTk.PhotoImage(crop_thumb)
         _img_refs.append(thumb_tk)
 
-        thumb_label = ttk.Label(scrollable_frame, image=thumb_tk)
+        thumb_label = tk.Label(scrollable_frame, image=thumb_tk)
         thumb_label.pack(pady=5)
         info = f"{name} ({score:.2f})"
         info_label = ttk.Label(scrollable_frame, text=info, foreground="green")
@@ -81,7 +81,7 @@ def show_annotation_preview(
         thumb_tk = ImageTk.PhotoImage(crop_thumb)
         _img_refs.append(thumb_tk)
 
-        thumb_label = ttk.Label(scrollable_frame, image=thumb_tk)
+        thumb_label = tk.Label(scrollable_frame, image=thumb_tk)
         thumb_label.pack(pady=5)
         display_txt = (txt[:40] + "…") if len(txt) > 40 else txt
         info = f'"{display_txt}" ({score:.2f})'
