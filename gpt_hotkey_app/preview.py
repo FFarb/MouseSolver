@@ -6,8 +6,6 @@ from PIL import Image, ImageDraw, ImageTk, ImageOps
 
 Det = Tuple[int, int, int, int, float, str]
 
-_img_refs = []  # Global list to hold PhotoImage references
-
 def show_annotation_preview(
     base_image: Image.Image,
     object_dets: List[Det],
@@ -20,8 +18,6 @@ def show_annotation_preview(
       - left: annotated region (green=objects, blue=text)
       - right: scrollable thumbnails for each detected object and text box
     """
-    global _img_refs
-    _img_refs.clear()
     text_dets = text_dets or []
 
     root = tk.Tk()
@@ -45,8 +41,8 @@ def show_annotation_preview(
         annotated_img = annotated_img.resize((max_w, int(annotated_img.height * ratio)))
 
     img_tk = ImageTk.PhotoImage(annotated_img)
-    _img_refs.append(img_tk)
     img_label = tk.Label(main_frame, image=img_tk)
+    img_label.image = img_tk  # Keep a reference
     img_label.pack(side=tk.LEFT, padx=10, pady=10)
 
     # --- Thumbnails ---
@@ -66,9 +62,9 @@ def show_annotation_preview(
         crop = base_image.crop((x1, y1, x2, y2))
         crop_thumb = ImageOps.pad(crop, (thumb_size, thumb_size))
         thumb_tk = ImageTk.PhotoImage(crop_thumb)
-        _img_refs.append(thumb_tk)
 
         thumb_label = tk.Label(scrollable_frame, image=thumb_tk)
+        thumb_label.image = thumb_tk  # Keep a reference
         thumb_label.pack(pady=5)
         info = f"{name} ({score:.2f})"
         info_label = ttk.Label(scrollable_frame, text=info, foreground="green")
@@ -79,9 +75,9 @@ def show_annotation_preview(
         crop = base_image.crop((x1, y1, x2, y2))
         crop_thumb = ImageOps.pad(crop, (thumb_size, thumb_size))
         thumb_tk = ImageTk.PhotoImage(crop_thumb)
-        _img_refs.append(thumb_tk)
 
         thumb_label = tk.Label(scrollable_frame, image=thumb_tk)
+        thumb_label.image = thumb_tk  # Keep a reference
         thumb_label.pack(pady=5)
         display_txt = (txt[:40] + "…") if len(txt) > 40 else txt
         info = f'"{display_txt}" ({score:.2f})'
