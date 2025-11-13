@@ -31,7 +31,7 @@ class HotkeyManager:
         """Register F8, F9, F10, Ctrl+F9, and F12 hotkeys."""
         self._logger.info("Registering hotkeys F8, F9, F10, Ctrl+F9, and F12")
         trigger_ref = keyboard.add_hotkey("F8", self._handle_trigger)
-        ocr_region_ref = keyboard.add_hotkey("F9", self._handle_ocr_region)
+        ocr_region_ref = keyboard.add_hotkey("F9", self._handle_ocr_region, trigger_on_release=True)
         object_discovery_ref = keyboard.add_hotkey("F10", self._handle_object_discovery)
         ocr_window_ref = keyboard.add_hotkey("Ctrl+F9", self._handle_ocr_window)
         exit_ref = keyboard.add_hotkey("F12", self._handle_exit)

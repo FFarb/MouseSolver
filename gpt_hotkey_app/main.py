@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import platform
 import threading
 import time
 from pathlib import Path
@@ -19,95 +20,105 @@ from .single_instance import ensure_single_instance
 from .tray import TrayManager
 
 
-def _exit_application(
-    stop_event: threading.Event,
-    hotkeys: HotkeyManager,
-    runner: Runner,
-    tray: TrayManager,
-    logger: logging.Logger,
-) -> None:
-    if stop_event.is_set():
-        return
-    logger.info("Shutdown requested")
-    stop_event.set()
-    tray.notify("Shutting down...")
-    hotkeys.unregister()
-    runner.shutdown()
-    tray.stop()
-    keyboard.clear_all_hotkeys()
+def detach_console_if_needed() -> None:
+    """If on Windows, detach from the console."""
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.kernel32.FreeConsole()
+        except Exception:
+            pass
 
 
-def main() -> None:
-    """Application entry point."""
+def run_app() -> bool:
+    """Run the application once.
+
+    Returns:
+        True if the user requested a clean exit (F12).
+        False if the app stopped unexpectedly and should be restarted.
+    """
+    detach_console_if_needed()
+    should_exit = False
+
     try:
         ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
         pass  # Ignore for non-Windows systems
 
-    # Initialise the Tk dispatcher on the main thread before any worker thread
-    # attempts to use it.
     ensure_ui_thread()
 
     config = load_config()
     log_dir = Path.cwd()
     logger = setup_logging(config.log_level, log_dir)
-    logger.info("Application starting")
+    app_instance = None
 
-    ensure_single_instance(logger=logger)
+    try:
+        logger.info("Application starting")
+        app_instance = ensure_single_instance(logger=logger)
 
-    stop_event = threading.Event()
+        stop_event = threading.Event()
+        tray_manager = TrayManager(on_exit=stop_event.set, logger=logger)
+        tray_manager.start()
 
-    tray_manager = TrayManager(on_exit=lambda: stop_event.set(), logger=logger)
-    tray_manager.start()
+        if not config.openai_api_key:
+            msg = "OPENAI_API_KEY missing. Application will exit."
+            logger.error(msg)
+            tray_manager.notify(msg)
+            time.sleep(2)
+            tray_manager.stop()
+            return True
 
-    if not config.openai_api_key:
-        message = "OPENAI_API_KEY missing. Application will exit."
-        logger.error(message)
-        tray_manager.notify(message)
-        time.sleep(2)
-        tray_manager.stop()
-        return
+        runner = Runner(config, tray_manager, stop_event, logger)
+        hotkeys: Optional[HotkeyManager] = None
 
-    runner = Runner(config, tray_manager, stop_event, logger)
-    hotkeys: Optional[HotkeyManager] = None
-
-    def on_exit() -> None:
-        if stop_event.is_set():
-            return
-        if hotkeys is None:
+        def on_exit() -> None:
+            nonlocal should_exit
+            if stop_event.is_set():
+                return
+            should_exit = True
+            logger.info("Shutdown requested")
             stop_event.set()
+            tray_manager.notify("Shutting down...")
+            if hotkeys:
+                hotkeys.unregister()
             runner.shutdown()
             tray_manager.stop()
             keyboard.clear_all_hotkeys()
-            return
-        _exit_application(stop_event, hotkeys, runner, tray_manager, logger)
 
-    hotkeys = HotkeyManager(
-        on_trigger=runner.trigger,
-        on_ocr_region=runner.run_ocr_region_select,
-        on_ocr_window=runner.run_ocr_pipeline,
-        on_object_discovery=runner.run_region_object_discovery,
-        on_exit=on_exit,
-        logger=logger,
-    )
-    hotkeys.register()
-    tray_manager.set_exit_callback(on_exit)
+        hotkeys = HotkeyManager(
+            on_trigger=runner.trigger,
+            on_ocr_region=runner.run_ocr_region_select,
+            on_ocr_window=runner.run_ocr_pipeline,
+            on_object_discovery=runner.run_region_object_discovery,
+            on_exit=on_exit,
+            logger=logger,
+        )
+        hotkeys.register()
+        tray_manager.set_exit_callback(on_exit)
+        tray_manager.notify("GPT Hotkey running (F8, F9, F10, F12 to exit)")
 
-    tray_manager.notify(
-        "GPT Hotkey running (F8, F9 for region OCR, F10 for object discovery, F12 to exit)"
-    )
-
-    try:
         while not stop_event.is_set():
             process_ui_events()
             time.sleep(0.05)
+
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
         on_exit()
+    except Exception as e:
+        logger.exception("Fatal error in app.run(): %s", e)
+        return False  # Indicate crash
     finally:
-        if not stop_event.is_set():
+        if "on_exit" in locals() and not stop_event.is_set():
             on_exit()
+        if app_instance:
+            app_instance.close()
         logger.info("Application terminated")
+
+    return should_exit
+
+
+def main() -> None:
+    """Original entry point for direct execution."""
+    run_app()
 
 
 if __name__ == "__main__":

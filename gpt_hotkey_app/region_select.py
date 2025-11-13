@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+import time
 from typing import Tuple
 
 
@@ -15,12 +16,18 @@ def select_screen_region(timeout_ms: int = 15000) -> Tuple[int, int, int, int] |
         A tuple of (x1, y1, x2, y2) screen coordinates, or None if canceled.
     """
     root = tk.Tk()
-    root.withdraw()  # Hide the main window
+    root.withdraw()
 
     selector = _RegionSelector(root, timeout_ms)
-    root.mainloop()
-
-    return selector.get_bbox()
+    try:
+        root.mainloop()
+        return selector.get_bbox()
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        time.sleep(0.02)
 
 
 class _RegionSelector:

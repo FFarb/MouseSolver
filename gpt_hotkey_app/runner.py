@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Optional
 
@@ -38,6 +39,8 @@ class Runner:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="runner")
         self._future_lock = threading.Lock()
         self._current_future: Optional[Future] = None
+        self._busy_f9 = threading.Event()
+        self._last_f9_ts = 0.0
 
     def trigger(self) -> None:
         """Trigger the workflow in a background worker thread."""
@@ -54,10 +57,22 @@ class Runner:
 
     def run_ocr_region_select(self) -> None:
         """Trigger the screen region OCR workflow in a background worker."""
+        now = time.monotonic()
+        if now - self._last_f9_ts < 0.25:
+            self._logger.info("F9 ignored (debounce)")
+            return
+        self._last_f9_ts = now
+
+        if self._busy_f9.is_set():
+            self.tray.notify("F9 is already running")
+            self._logger.info("F9 suppressed: already running")
+            return
+
         if self._stop_event.is_set():
             self._logger.debug("Trigger ignored because stop event is set")
             return
 
+        # Use the generic lock to ensure only one task runs at a time
         with self._future_lock:
             if self._current_future and not self._current_future.done():
                 self._logger.info("Processing already in progress; ignoring new trigger")
@@ -133,26 +148,22 @@ class Runner:
                 self._current_future = None
 
     def _run_ocr_region_once(self) -> None:
-        self._logger.info("F9 pressed — starting screen region OCR")
-        self._tray.notify("Select area (ESC to cancel)...")
-        bbox = select_screen_region()
-
-        if not bbox:
-            self._logger.info("Region selection canceled or timed out")
-            self._tray.notify("Region selection canceled")
-            return
-
-        self._logger.info("Selected region: %s", bbox)
-        self._tray.notify("Analyzing selected region...")
-
+        self._busy_f9.set()
+        self.logger.info("F9 start")
         try:
-            text = extract_text_from_region(bbox)
-            if not text.strip():
-                self._logger.warning("No readable text found in selection")
-                self._tray.notify("No readable text in selection")
+            bbox = select_screen_region()
+            if not bbox:
+                self.tray.notify("Selection canceled")
+                self.logger.info("F9 selection canceled")
                 return
 
-            self._logger.info("OCR extracted %d characters from region", len(text))
+            self.tray.notify("Analyzing selected region...")
+            text = extract_text_from_region(bbox)
+            if not text.strip():
+                self.tray.notify("No readable text in selection")
+                self.logger.info("F9: no OCR text")
+                return
+
             reply = ask_gpt(
                 system=self._config.system_prompt,
                 user=text,
@@ -160,12 +171,14 @@ class Runner:
                 timeout=self._config.request_timeout,
             )
             write_clipboard_text(reply)
-            self._logger.info("OCR region response written to clipboard (%d chars)", len(reply))
-            self._tray.notify(f"OCR → GPT: response copied ({len(reply)} chars)")
+            self.tray.notify(f"OCR → GPT: response copied ({len(reply)} chars)")
+            self.logger.info("F9 reply length: %d", len(reply))
         except Exception as e:
-            self._logger.exception("Error during screen region OCR pipeline")
-            self._tray.notify(f"OCR region error: {e}")
+            self.logger.exception("F9 error: %s", e)
+            self.tray.notify(f"F9 error: {e}")
         finally:
+            self._busy_f9.clear()
+            self.logger.info("F9 end")
             with self._future_lock:
                 self._current_future = None
 
