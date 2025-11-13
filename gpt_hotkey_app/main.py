@@ -40,7 +40,7 @@ def main() -> None:
     """Application entry point."""
     try:
         ctypes.windll.user32.SetProcessDPIAware()
-    except (AttributeError, TypeError):
+    except Exception:
         pass  # Ignore for non-Windows systems
     config = load_config()
     log_dir = Path.cwd()
