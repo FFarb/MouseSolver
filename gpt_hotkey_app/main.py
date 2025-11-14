@@ -13,6 +13,7 @@ import keyboard
 from .config import load_config
 from .hotkeys import HotkeyManager
 from .logger import setup_logging
+from .preview_ui import ensure_ui_thread, process_ui_events
 from .runner import Runner
 from .single_instance import ensure_single_instance
 from .tray import TrayManager
@@ -40,8 +41,13 @@ def main() -> None:
     """Application entry point."""
     try:
         ctypes.windll.user32.SetProcessDPIAware()
-    except (AttributeError, TypeError):
+    except Exception:
         pass  # Ignore for non-Windows systems
+
+    # Initialise the Tk dispatcher on the main thread before any worker thread
+    # attempts to use it.
+    ensure_ui_thread()
+
     config = load_config()
     log_dir = Path.cwd()
     logger = setup_logging(config.log_level, log_dir)
@@ -93,7 +99,8 @@ def main() -> None:
 
     try:
         while not stop_event.is_set():
-            time.sleep(0.2)
+            process_ui_events()
+            time.sleep(0.05)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
         on_exit()
