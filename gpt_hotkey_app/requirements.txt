@@ -1,0 +1,7 @@
+openai>=1.51
+python-dotenv>=1.0
+keyboard>=0.13
+pyperclip>=1.8
+pystray>=0.19
+Pillow>=10.0
+psutil>=5.9
